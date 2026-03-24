@@ -84,3 +84,79 @@ ax.set_ylabel(r"$\rho_{k+1} / \rho_k$")
 ax.grid(True, linestyle="--", alpha=0.4)
 plt.tight_layout()
 plt.show()
+
+def estimate_lambda_from_acf(acf_values, max_lag=30):
+    """
+    Estimate EMA decay parameter lambda using log-linear regression:
+        log(rho(h)) = h * log(lambda)
+
+    Parameters
+    ----------
+    acf_values : array-like
+        ACF values starting at lag 0
+    max_lag : int
+        Number of lags to use in estimation (avoid noisy long lags)
+
+    Returns
+    -------
+    results : dict
+        lambda estimate, half-life, regression fit, diagnostics
+    """
+
+    acf_values = np.array(acf_values)
+
+    # Use lags 1 to max_lag
+    lags = np.arange(1, max_lag + 1)
+    rho = acf_values[1:max_lag + 1]
+
+    # Only keep positive values (log requires positive)
+    mask = rho > 0
+    lags = lags[mask]
+    rho = rho[mask]
+
+    log_rho = np.log(rho)
+
+    # Regression: log_rho = beta * lag
+    X = lags.reshape(-1, 1)
+    y = log_rho
+
+    reg = LinearRegression().fit(X, y)
+
+    beta = reg.coef_[0]
+    lambda_est = np.exp(beta)
+
+    # Half-life
+    half_life = np.log(0.5) / np.log(lambda_est)
+
+    # R^2
+    r2 = reg.score(X, y)
+
+    # Fitted values
+    fitted_log = reg.predict(X)
+    fitted_rho = np.exp(fitted_log)
+
+    print("=" * 80)
+    print("EMA PARAMETER ESTIMATION")
+    print("=" * 80)
+    print(f"Estimated log(lambda): {beta:.6f}")
+    print(f"Estimated lambda:      {lambda_est:.6f}")
+    print(f"Half-life (days):      {half_life:.2f}")
+    print(f"R^2 (log-linear fit):  {r2:.6f}")
+
+    # Plot fit
+    plt.figure(figsize=(10, 5))
+    plt.scatter(lags, rho, label="Observed ACF")
+    plt.plot(lags, fitted_rho, linestyle='--', label="Fitted exp decay")
+    plt.xlabel("Lag")
+    plt.ylabel("ACF")
+    plt.title("EMA Fit to ACF")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+    return {
+        "lambda": lambda_est,
+        "half_life": half_life,
+        "beta": beta,
+        "r2": r2
+    }
