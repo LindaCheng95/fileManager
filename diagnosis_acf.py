@@ -160,3 +160,100 @@ def estimate_lambda_from_acf(acf_values, max_lag=30):
         "beta": beta,
         "r2": r2
     }
+
+    import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from statsmodels.graphics.tsaplots import plot_acf
+
+# ============================================================
+# INPUTS
+# ============================================================
+# Replace with your actual pandas Series
+# Requirements:
+# - pandas Series
+# - DatetimeIndex
+# - numeric values
+#
+# Example:
+# citi = df["citi_series"].copy()
+
+# citi = ...
+lam = 0.98   # <-- replace with your estimated lambda
+
+# ============================================================
+# 1. CLEAN / ALIGN
+# ============================================================
+citi = citi.sort_index().dropna().copy()
+
+# If your index includes weekends but Citi is only meaningful on weekdays,
+# keep weekdays only. If Citi already has weekdays only, this does nothing harmful.
+citi = citi[citi.index.dayofweek < 5]
+
+# ============================================================
+# 2. COMPUTE EMA-IMPLIED INNOVATION
+# u_t = C_t - lambda * C_{t-1}
+# ============================================================
+df = pd.DataFrame({"citi": citi})
+df["citi_lag1"] = df["citi"].shift(1)
+df["u"] = df["citi"] - lam * df["citi_lag1"]
+df["z_implied"] = df["u"] / (1 - lam)   # optional: implied latent input up to EMA assumption
+
+df = df.dropna().copy()
+
+# ============================================================
+# 3. SIMPLE NUMERIC CHECKS
+# ============================================================
+raw_autocorr_1 = df["citi"].autocorr(lag=1)
+innov_autocorr_1 = df["u"].autocorr(lag=1)
+
+print("Sample size:", len(df))
+print(f"Estimated lambda: {lam:.6f}")
+print("-" * 50)
+print(f"Raw Citi lag-1 autocorr        : {raw_autocorr_1:.4f}")
+print(f"Innovation lag-1 autocorr      : {innov_autocorr_1:.4f}")
+print(f"Raw Citi std                   : {df['citi'].std():.4f}")
+print(f"Innovation std                 : {df['u'].std():.4f}")
+print(f"Correlation(raw, innovation)   : {df['citi'].corr(df['u']):.4f}")
+
+# ============================================================
+# 4. PLOT RAW CITI AND INNOVATION
+# ============================================================
+fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+
+axes[0].plot(df.index, df["citi"])
+axes[0].set_title("Raw Citi series")
+axes[0].axhline(0, linewidth=1)
+
+axes[1].plot(df.index, df["u"])
+axes[1].set_title(r"EMA-implied innovation: $u_t = C_t - \lambda C_{t-1}$")
+axes[1].axhline(0, linewidth=1)
+
+plt.tight_layout()
+plt.show()
+
+# ============================================================
+# 5. ACF COMPARISON
+# ============================================================
+fig, axes = plt.subplots(2, 1, figsize=(10, 8))
+
+plot_acf(df["citi"], lags=40, ax=axes[0])
+axes[0].set_title("ACF of raw Citi series")
+
+plot_acf(df["u"], lags=40, ax=axes[1])
+axes[1].set_title("ACF of EMA-implied innovation")
+
+plt.tight_layout()
+plt.show()
+
+# ============================================================
+# 6. OPTIONAL: QUICK TABLE OF FIRST FEW AUTOCORRELATIONS
+# ============================================================
+max_lag = 10
+acf_table = pd.DataFrame({
+    "lag": range(1, max_lag + 1),
+    "raw_citi_acf": [df["citi"].autocorr(lag=k) for k in range(1, max_lag + 1)],
+    "innovation_acf": [df["u"].autocorr(lag=k) for k in range(1, max_lag + 1)],
+})
+print("\nFirst few autocorrelations:")
+print(acf_table.to_string(index=False))
